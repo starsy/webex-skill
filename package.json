@@ -1,0 +1,16 @@
+{
+  "name": "webex-skill",
+  "version": "1.0.0",
+  "description": "Webex messaging agent skill: fetch unread rooms, summarize, prioritize, draft replies",
+  "private": true,
+  "scripts": {
+    "fetch-unread": "node scripts/fetch-unread.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "consola": "^3.2.3",
+    "webex-node": "^3.0.0"
+  }
+}
