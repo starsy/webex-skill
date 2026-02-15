@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 import { consola } from 'consola';
 import WebexNode from 'webex-node';
-// import webex from 'webex';
-import { getHydraRoomType, getHydraClusterString, buildHydraRoomId } from '@webex/common/dist/uuid-utils.js';
 import dotenv from 'dotenv';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,20 +12,36 @@ dotenv.config({ path: ENV_PATH, quiet: true });
 consola.options.stdout = process.stderr;
 consola.options.stderr = process.stderr;
 
-consola.level = -999
+// consola.level = -999
 
 const DEFAULT_MAX_RECENT = 30;
 const MAX_RECENT_CAP = 1000;
-const ACTIVITY_FROM_MS = 24 * 60 * 60 * 1000;
+/** How many rooms to ask the SDK for when scanning (must be large enough to find matches). */
+const ROOMS_SCAN_LIMIT = 100;
+
 const MESSAGES_PAGE_SIZE = 100;
 const ROOM_TYPES = new Set(['direct', 'group']);
+const BOT_EMAIL_SUFFIX = '@webex.bot';
+
+/** Output: all unread direct and group rooms. mentionedMe is set per room for highlighting @mentions. */
+function isOutputRoom(room) {
+    return room?.type === 'direct' || room?.type === 'group';
+}
+
+/** Exclude rooms where any unread message is from a bot. */
+function roomHasNoBotMessages(room) {
+    const messages = room?.unreadMessages ?? [];
+    const hasBot = messages.some((m) => String(m?.personEmail ?? '').endsWith(BOT_EMAIL_SUFFIX));
+    return !hasBot;
+}
 const SDK_READY_TIMEOUT_MS = 60000;
 
 function out(result) {
     console.log(JSON.stringify(result));
 }
 
-function getMaxRecent() {
+/** Max number of rooms to return (direct + mentionedMe). From WEBEX_MAX_RECENT. */
+function getMaxRoomsToReturn() {
     const raw = process.env.WEBEX_MAX_RECENT;
     if (!raw) return DEFAULT_MAX_RECENT;
     const n = parseInt(raw, 10);
@@ -61,7 +75,8 @@ function normalizeRoom(room) {
     };
 }
 
-function inLast24h(room) {
+function inLastXhours(room, hours = 24) {
+    const ACTIVITY_FROM_MS = hours * 60 * 60 * 1000;
     const cutoff = Date.now() - ACTIVITY_FROM_MS;
     return toTs(room.lastActivityDate) >= cutoff;
 }
@@ -78,29 +93,73 @@ function extractMessageItems(messagesResponse) {
     return [];
 }
 
-async function getUnreadMessageCount(webex, room, meId) {
+function isUnreadMessage(message, lastSeenTs, meId) {
+    const createdTs = toTs(message?.created);
+    if (createdTs <= lastSeenTs) return false;
+    return message?.personId !== meId;
+}
+
+async function getUnreadMessages(webex, room, meId) {
     const messagesResponse = await webex.messages.list({
         roomId: room.id,
         max: MESSAGES_PAGE_SIZE,
     });
     const messages = extractMessageItems(messagesResponse);
     const lastSeenTs = toTs(room.lastSeenDate);
-    return messages.filter((message) => {
-        const createdTs = toTs(message?.created);
-        if (createdTs <= lastSeenTs) return false;
-        return message?.personId !== meId;
-    }).length;
+    return messages
+        .filter((message) => isUnreadMessage(message, lastSeenTs, meId))
+        .sort((a, b) => toTs(a.created) - toTs(b.created));
 }
 
-async function attachUnreadMessageCounts(webex, unreadRooms, meId) {
+function roomMentionsMe(unreadMessages, meId) {
+    if (!meId || !Array.isArray(unreadMessages)) return false;
+    return unreadMessages.some(
+        (m) => Array.isArray(m.mentionedPeople) && m.mentionedPeople.includes(meId),
+    );
+}
+
+/** Build people map: key = personEmail, value = personId. Also slim messages (remove roomId, personId). */
+function buildPeopleAndSlimMessages(roomsWithMessages) {
+    const people = Object.create(null);
+    for (const room of roomsWithMessages) {
+        for (const message of room.unreadMessages || []) {
+            const email = message.personEmail ?? null;
+            const pid = message.personId;
+            if (email && pid && people[email] === undefined) {
+                people[email] = pid;
+            }
+            delete message.roomId;
+            delete message.personId;
+            delete message.roomType;
+            delete message.created;
+            delete message.updated;
+            if (message.markdown != null) {
+                delete message.text;
+            }
+            if (message.html != null) {
+                delete message.markdown;
+                delete message.text;
+            }
+        }
+    }
+    return people;
+}
+
+async function attachUnreadMessages(webex, unreadRooms, meId) {
     return Promise.all(
         unreadRooms.map(async (room) => {
             try {
-                const unreadMessageCount = await getUnreadMessageCount(webex, room, meId);
-                return { ...room, unreadMessageCount };
+                const unreadMessages = await getUnreadMessages(webex, room, meId);
+                const mentionedMe = roomMentionsMe(unreadMessages, meId);
+                return {
+                    ...room,
+                    unreadMessages,
+                    unreadMessageCount: unreadMessages.length,
+                    mentionedMe,
+                };
             } catch (err) {
-                consola.warn(`Failed to get unread message count for room ${room.id}: ${err?.message || err}`);
-                return { ...room, unreadMessageCount: 0 };
+                consola.warn(`Failed to get unread messages for room ${room.id}: ${err?.message || err}`);
+                return { ...room, unreadMessages: [], unreadMessageCount: 0, mentionedMe: false };
             }
         }),
     );
@@ -127,7 +186,6 @@ async function initWebex(accessToken) {
                 ephemeral: true,
             },
             validateDomains: true,
-            // allowedDomains: ['wbx2.com', 'ciscospark.com', 'webex.com', 'webexapis.com', 'localhost'],
         },
     });
 
@@ -137,9 +195,6 @@ async function initWebex(accessToken) {
         webex.once('error', reject);
     }), SDK_READY_TIMEOUT_MS, 'SDK ready');
     if (!webex.canAuthorize) throw new Error('SDK not authorized');
-
-    const me = await webex.people.get('me');
-    consola.log('me', me);
 
     return webex;
 }
@@ -152,8 +207,8 @@ async function main() {
         process.exit(1);
     }
 
-    const maxRecent = getMaxRecent();
-    consola.info(`maxRecent=${maxRecent}`);
+    const maxRoomsToReturn = getMaxRoomsToReturn();
+    consola.info(`maxRoomsToReturn=${maxRoomsToReturn}`);
 
     let webex;
     try {
@@ -167,24 +222,39 @@ async function main() {
     }
 
     consola.info('Listing rooms with read status');
-    const roomsResponse = await webex.rooms.listWithReadStatus(maxRecent);
+    const [roomsResponse, me] = await Promise.all([
+        webex.rooms.listWithReadStatus(ROOMS_SCAN_LIMIT),
+        webex.people.get('me'),
+    ]);
     const rooms = extractRoomItems(roomsResponse);
-    const me = await webex.people.get('me');
+    consola.info('me:', me);
 
     const normalized = rooms
         .map(normalizeRoom)
         .filter((r) => ROOM_TYPES.has(r.type))
-        .filter(inLast24h)
+        .filter((r) => inLastXhours(r, 24))
         .sort((a, b) => toTs(b.lastActivityDate) - toTs(a.lastActivityDate));
 
     const unread = normalized.filter((r) => r.isUnread);
-    const unreadWithCounts = await attachUnreadMessageCounts(webex, unread, me?.id);
+    const unreadWithMessages = await attachUnreadMessages(webex, unread, me?.id);
+    const roomsFiltered = unreadWithMessages
+        .filter(isOutputRoom)
+        .filter(roomHasNoBotMessages)
+        .slice(0, maxRoomsToReturn);
+    for (const room of roomsFiltered) {
+        if (room.type === 'direct' && room.unreadMessages?.length > 0) {
+            const lastMessage = room.unreadMessages[room.unreadMessages.length - 1];
+            if (lastMessage.personEmail) room.title = lastMessage.personEmail;
+        }
+    }
+    const people = buildPeopleAndSlimMessages(roomsFiltered);
     out({
-        rooms: unreadWithCounts,
+        rooms: roomsFiltered,
+        people,
         stats: {
             total: normalized.length,
-            unread: unreadWithCounts.length,
-            read: normalized.length - unreadWithCounts.length,
+            unread: roomsFiltered.length,
+            read: normalized.length - unreadWithMessages.length,
         },
         error: null,
     });
