@@ -1,6 +1,6 @@
 ---
 name: webex-messaging
-description: Fetch Webex rooms and unread messages, summarize conversations, prioritize for handling, and draft replies using the Webex Node.js SDK. Use when the user wants to manage Webex messages, catch up on unread, get summaries of unread conversations, prioritize which to handle first, or draft replies to send in Webex.
+description: Fetch Webex rooms and unread messages, summarize conversations, prioritize for handling, and send messages using the Webex Node.js SDK. Use when the user wants to manage Webex messages, catch up on unread, get summaries of unread conversations, prioritize which to handle first, draft replies, or send a message to a room or person.
 license: Apache-2.0
 metadata:
   author: webex-skill
@@ -10,57 +10,62 @@ compatibility: Node.js 20+, npm 10.x. WEBEX_ACCESS_TOKEN must be set in the envi
 
 # Webex Messaging
 
-Fetch Webex rooms (direct + group, recent activity), list them, prioritize for handling, and draft replies. The script uses the **Webex REST API only** (no SDK); token from the environment—never hardcode or log.
+Fetch Webex rooms (direct + group) with unread messages and read status, list them, prioritize for handling, draft replies, and optionally send messages—using the **Webex Node.js SDK**. Token and options come from the environment or CLI; never hardcode or log the token.
 
 ## Prerequisites
 
-- **Node.js 18** and **npm 10.x** (or yarn).
-- **WEBEX_ACCESS_TOKEN** set in the environment. User obtains a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
-- Optional: **WEBEX_MAX_RECENT** (default 100) to limit how many rooms per type are requested.
+- **Node.js 20+** and **npm 10.x** (or yarn).
+- **WEBEX_ACCESS_TOKEN** set in the environment or `.env`. Obtain a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
+- Optional env: **WEBEX_MAX_RECENT** (default 30), **WEBEX_ACTIVITY_HOURS** (default 24). These can be overridden by CLI options.
 
-If the token is missing, ask the user to set it (e.g. `export WEBEX_ACCESS_TOKEN=your_token`) and re-run.
+If the token is missing, ask the user to set it (e.g. in `.env` or `export WEBEX_ACCESS_TOKEN=your_token`) and re-run.
 
 ## Quick Start
 
-1. Ensure `WEBEX_ACCESS_TOKEN` is set.
-2. Ensure node version is 18. Webex SDK doesn't work with any version > 18.
-3. From the project root, run:
+1. Ensure `WEBEX_ACCESS_TOKEN` is set (e.g. in `.env` in the project root).
+2. From the project root:
    ```bash
    npm install
-   nvm run 18 scripts/fetch-unread.mjs
+   node scripts/fetch-unread.mjs
    ```
-4. Parse the JSON from stdout. Use it to list rooms, prioritize them (see Workflow below). To summarize or draft replies you need message content—fetch messages per room via REST when needed.
+   Optional CLI: `node scripts/fetch-unread.mjs --hours 12 --max-rooms 10`.
+3. Parse the JSON from stdout: `rooms` (with `unreadMessages`, `mentionedMe`, etc.), `people`, `stats`, `error`.
+4. To send a message to a room or person:
+   ```bash
+   node scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
+   node scripts/send-message.mjs -t ROOM_ID -m "Room message"
+   ```
 
-The script does **not** send any messages. It returns rooms with activity in the last 24h (direct + group). Read status (unread) is **not** available from REST—output includes `readStatusUnavailable: true`.
+The fetch script returns **unread** direct and group rooms (with message bodies and read status from the SDK). The send script posts a **markdown** message to a room ID or person email.
 
 ## Workflow
 
 ### Step 1: Ensure token and run fetch script
 
-- Check that `WEBEX_ACCESS_TOKEN` is in the environment. If not, tell the user to set it and try again.
-- From the project root, run: `node scripts/fetch-unread.mjs`.
+- Check that `WEBEX_ACCESS_TOKEN` is set in `.env` or the environment. If not, tell the user to set it and try again.
+- From the project root, run: `node scripts/fetch-unread.mjs` (optionally with `--hours N` and `--max-rooms N`).
 - Capture stdout. On failure the script prints a single JSON line with an `error` field and exits non-zero.
 
 ### Step 2: Use the script output
 
-- The script outputs: `{ "rooms": [ ... ], "error": null, "readStatusUnavailable": true }`.
-- Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate` (null from REST). Rooms are direct + group with activity in the last 24h; no message bodies.
+- The script outputs: `{ "rooms": [ ... ], "people": { ... }, "stats": { ... }, "error": null }`.
+- Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate`, `isUnread`, `unreadMessages`, `unreadMessageCount`, `mentionedMe`. Direct room titles are normalized to the other person’s email. Rooms are direct + group with unread activity in the last N hours (default 24); rooms where every unread message is from a bot are excluded.
 
 ### Step 3: Summarize or list rooms
 
-- Use `lastActivityDate` to see how recent each room is. For a short **gist** of what was said, fetch message content via REST (see [references/api-usage.md](references/api-usage.md)).
+- Use `lastActivityDate` and `unreadMessages` (text/markdown/html) for a short **gist**. The `people` map keys emails to person IDs.
 
 ### Step 4: Prioritize for handling
 
-- Order rooms for the user to handle. Suggested order:
+- Order rooms for the user. Suggested order:
   - Direct (1:1) rooms first, then group rooms.
   - Within each, by latest activity (most recent first).
-  - Optionally boost rooms where the user is mentioned or where keywords suggest urgency.
+  - Boost rooms where `mentionedMe` is true or keywords suggest urgency.
 
-### Step 5: Draft replies
+### Step 5: Draft replies and optionally send
 
-- For each prioritized conversation (or a subset the user cares about), suggest 1–2 short reply options.
-- Present as draft text the user can copy into Webex or approve for sending. Do **not** send messages automatically unless the user explicitly asks to send (e.g. "send this to that room") and you have a safe way to do so (e.g. running a send script with user-confirmed text).
+- For each prioritized conversation, suggest 1–2 short reply options as draft text.
+- Only send when the user explicitly asks (e.g. “send this to that room”). Then run `node scripts/send-message.mjs --to <roomId_or_email> --message "<user-approved text>"`.
 
 ## Output format
 
@@ -81,10 +86,82 @@ When presenting results to the user, use this structure:
 
 ## Script usage
 
-- **Command**: From the project root, run `nvm run 18 scripts/fetch-unread.mjs`.
-- **Input**: None; token is read from `WEBEX_ACCESS_TOKEN`.
-- **Output**: Single JSON object to stdout: `{ "rooms": [ ... ], "error": null, "readStatusUnavailable": true }`. Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate` (no message bodies).
-- **Errors**: Script prints `{ "rooms": [], "error": "message" }` and exits with a non-zero code. Do not log or echo the token.
+### fetch-unread.mjs
+
+- **Command**: `node scripts/fetch-unread.mjs` (from project root).
+- **CLI options** (override env when provided):
+
+  | Option | Short | Description | Default / env |
+  |--------|--------|--------------|----------------|
+  | `--hours` | `-H` | Only rooms with activity in the last N hours | 24 / WEBEX_ACTIVITY_HOURS |
+  | `--max-rooms` | `-n` | Max number of rooms to return | 30 / WEBEX_MAX_RECENT |
+
+  Examples: `--hours 12 --max-rooms 10`, `-H 48 -n 5`, `--hours=6 --max-rooms=20`.
+- **Input**: Token from `WEBEX_ACCESS_TOKEN`; optional env `WEBEX_MAX_RECENT`, `WEBEX_ACTIVITY_HOURS`.
+- **Output**: Single JSON to stdout; see [Response schema (fetch-unread.mjs)](#response-schema-fetch-unreadmjs) below.
+- **Errors**: Prints `{ "rooms": [], "error": "message" }` and exits non-zero. Do not log or echo the token.
+
+#### Response schema (fetch-unread.mjs)
+
+Root object schema for the JSON written to stdout:
+
+```yaml
+type: object
+properties:
+  rooms:
+    type: array
+    items:
+      type: object
+      properties:
+        id: string
+        title: string
+        type: string
+        lastActivityDate: string   # ISO datetime
+        lastSeenDate: string | null
+        isUnread: boolean
+        unreadMessageCount: integer
+        unreadMessages:
+          type: array
+          items:
+            type: object
+            properties:
+              id: string
+              text: string?
+              html: string?
+              personEmail: string?
+              files: array<string>?
+              mentionedPeople: array<string>?
+              parentId: string?
+              isVoiceClip: boolean?
+        mentionedMe: boolean
+  people:
+    type: object
+    additionalProperties: string   # maps email → personId
+  stats:
+    type: object
+    properties:
+      total: integer
+      unread: integer
+      read: integer
+  error:
+    type: string | null
+required: [rooms, people, stats, error]
+```
+
+### send-message.mjs
+
+- **Command**: `node scripts/send-message.mjs` (from project root).
+- **CLI options** (override env when provided):
+
+  | Option | Short | Description | Default / env |
+  |--------|--------|--------------|----------------|
+  | `--to` | `-t` | Room ID or person email (recipient) | WEBEX_TO |
+  | `--message` | `-m` | Markdown body of the message | WEBEX_MESSAGE or stdin |
+
+  Examples: `--to user@example.com --message "**Hello**"`, `-t ROOM_ID -m "Hi"`, `echo "Body" | node scripts/send-message.mjs --to user@example.com`.
+- **Input**: Token from `WEBEX_ACCESS_TOKEN`; recipient and body from CLI or env (or message from stdin).
+- **Output**: Success: `{ "ok": true, "message": { "id", "roomId", "created" }, "error": null }`. Failure: `{ "ok": false, "error": "message" }`.
+- **Behavior**: If `--to`/`WEBEX_TO` contains `@`, the message is sent to that person (1:1); otherwise it is treated as a room ID.
 
 For REST endpoints and optional SDK reference, see [references/api-usage.md](references/api-usage.md).
 
@@ -92,19 +169,20 @@ For REST endpoints and optional SDK reference, see [references/api-usage.md](ref
 
 | Issue | Cause | Action |
 |-------|--------|--------|
-| `WEBEX_ACCESS_TOKEN required` | Token not set | Ask user to set `WEBEX_ACCESS_TOKEN` and re-run. |
+| `WEBEX_ACCESS_TOKEN required` | Token not set | Ask user to set `WEBEX_ACCESS_TOKEN` (e.g. in `.env`) and re-run. |
 | Invalid or expired token | Token revoked or expired | User must generate a new token at Webex for Developers and update the env. |
-| Empty `rooms` | No rooms with activity in last 24h, or API limit | Normal. Use `WEBEX_MAX_RECENT` to request more (default 100). |
-| REST 4xx/5xx | Bad request or Webex outage | Check [Webex REST API](https://developer.webex.com/docs/api/v1/rooms/list-rooms); ensure firewall allows https://webexapis.com. |
+| Empty `rooms` | No unread rooms in the time window, or filters exclude all | Try `--hours 48` or `--max-rooms`; check that direct/group and bot filters are expected. |
+| SDK / network errors | Webex outage or firewall | Ensure firewall allows https://webexapis.com and discovery endpoints; see [references/api-usage.md](references/api-usage.md). |
+| send-message: `--to` or WEBEX_TO required | Recipient not provided | Pass `--to <roomId_or_email>` or set WEBEX_TO. |
 
 ## Sending a message (optional)
 
-To send a message only when the user explicitly requests it (e.g. "send this reply to that room"):
+When the user explicitly asks to send a message (e.g. “send this reply to that room”):
 
-1. Use the room `id` from the fetch output and the exact text the user approved.
-2. Call REST `POST https://webexapis.com/v1/messages` with body `{ roomId, text }` and header `Authorization: Bearer <token>`. Read token from env only.
+1. Use the room `id` or person email from the fetch output and the **exact** text the user approved.
+2. Run: `node scripts/send-message.mjs --to <roomId_or_email> --message "<user-approved markdown>"` (or set `WEBEX_TO` and `WEBEX_MESSAGE` / stdin). Token is read from env only; never hardcode it.
 
-See [references/api-usage.md](references/api-usage.md) for REST messages and rooms.
+See [references/api-usage.md](references/api-usage.md) for REST/SDK reference.
 
 ## Resources
 

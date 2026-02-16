@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+/**
+ * Fetch unread Webex rooms (direct + group) with messages.
+ *
+ * Options (CLI overrides env):
+ *   --hours, -H         Only rooms with activity in the last N hours (default: 24)
+ *   --max-rooms, -n     Max number of rooms to return (default: WEBEX_MAX_RECENT or 30)
+ *
+ * Env: WEBEX_ACCESS_TOKEN (required), WEBEX_MAX_RECENT, WEBEX_ACTIVITY_HOURS
+ */
 import { consola } from 'consola';
 import WebexNode from 'webex-node';
 import dotenv from 'dotenv';
@@ -16,7 +25,9 @@ const DEFAULT_MAX_RECENT = 30;
 const MAX_RECENT_CAP = 1000;
 const ROOMS_SCAN_LIMIT = 100;
 const MESSAGES_PAGE_SIZE = 100;
-const ACTIVITY_HOURS = 24;
+const DEFAULT_ACTIVITY_HOURS = 24;
+const MIN_ACTIVITY_HOURS = 1;
+const MAX_ACTIVITY_HOURS = 720; // 30 days
 const SDK_READY_TIMEOUT_MS = 60_000;
 
 const ROOM_TYPES = new Set(['direct', 'group']);
@@ -42,13 +53,38 @@ function out(result) {
     console.log(JSON.stringify(result));
 }
 
-/** Max number of rooms to return. From WEBEX_MAX_RECENT. */
-function getMaxRoomsToReturn() {
-    const raw = process.env.WEBEX_MAX_RECENT;
-    if (!raw) return DEFAULT_MAX_RECENT;
-    const n = parseInt(raw, 10);
+function parseArgs(argv = process.argv.slice(2)) {
+    const opts = { hours: null, maxRooms: null };
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i];
+        if (arg === '--hours' || arg === '-H') {
+            opts.hours = argv[++i];
+        } else if (arg === '--max-rooms' || arg === '-n') {
+            opts.maxRooms = argv[++i];
+        } else if (arg.startsWith('--hours=')) {
+            opts.hours = arg.slice(8);
+        } else if (arg.startsWith('--max-rooms=')) {
+            opts.maxRooms = arg.slice(12);
+        }
+    }
+    return opts;
+}
+
+/** Max number of rooms to return. CLI/Webex max-rooms overrides WEBEX_MAX_RECENT. */
+function getMaxRoomsToReturn(cliMaxRooms = null) {
+    const raw = cliMaxRooms ?? process.env.WEBEX_MAX_RECENT;
+    if (raw === null || raw === undefined || raw === '') return DEFAULT_MAX_RECENT;
+    const n = parseInt(String(raw), 10);
     if (!Number.isFinite(n) || n < 1) return DEFAULT_MAX_RECENT;
     return Math.min(n, MAX_RECENT_CAP);
+}
+
+function getActivityHours(cliHours = null) {
+    const raw = cliHours ?? process.env.WEBEX_ACTIVITY_HOURS;
+    if (raw === null || raw === undefined || raw === '') return DEFAULT_ACTIVITY_HOURS;
+    const n = parseInt(String(raw), 10);
+    if (!Number.isFinite(n) || n < MIN_ACTIVITY_HOURS) return DEFAULT_ACTIVITY_HOURS;
+    return Math.min(n, MAX_ACTIVITY_HOURS);
 }
 
 function toTs(value) {
@@ -202,8 +238,10 @@ async function main() {
         process.exit(1);
     }
 
-    const maxRoomsToReturn = getMaxRoomsToReturn();
-    consola.info(`maxRoomsToReturn=${maxRoomsToReturn}`);
+    const cli = parseArgs();
+    const activityHours = getActivityHours(cli.hours);
+    const maxRoomsToReturn = getMaxRoomsToReturn(cli.maxRooms);
+    consola.info(`activityHours=${activityHours}, maxRoomsToReturn=${maxRoomsToReturn}`);
 
     let webex;
     try {
@@ -227,7 +265,7 @@ async function main() {
     const normalized = rooms
         .map(normalizeRoom)
         .filter((r) => ROOM_TYPES.has(r.type))
-        .filter((r) => inLastXhours(r, ACTIVITY_HOURS))
+        .filter((r) => inLastXhours(r, activityHours))
         .sort((a, b) => toTs(b.lastActivityDate) - toTs(a.lastActivityDate));
 
     const unread = normalized.filter((r) => r.isUnread);
