@@ -27,7 +27,7 @@ If the token is missing, ask the user to set it (e.g. `export WEBEX_ACCESS_TOKEN
 3. From the project root, run:
    ```bash
    npm install
-   node scripts/fetch-unread.mjs
+   nvm run 18 scripts/fetch-unread.mjs
    ```
 4. Parse the JSON from stdout. Use it to list rooms, prioritize them (see Workflow below). To summarize or draft replies you need message content—fetch messages per room via REST when needed.
 
@@ -81,7 +81,7 @@ When presenting results to the user, use this structure:
 
 ## Script usage
 
-- **Command**: From the project root, run `node scripts/fetch-unread.mjs`.
+- **Command**: From the project root, run `nvm run 18 scripts/fetch-unread.mjs`.
 - **Input**: None; token is read from `WEBEX_ACCESS_TOKEN`.
 - **Output**: Single JSON object to stdout: `{ "rooms": [ ... ], "error": null, "readStatusUnavailable": true }`. Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate` (no message bodies).
 - **Errors**: Script prints `{ "rooms": [], "error": "message" }` and exits with a non-zero code. Do not log or echo the token.
