@@ -5,32 +5,33 @@ license: Apache-2.0
 metadata:
   author: webex-skill
   version: "1.0"
-compatibility: Node.js 20+, npm 10.x, webex-node package. WEBEX_ACCESS_TOKEN must be set in the environment.
+compatibility: Node.js 20+, npm 10.x. WEBEX_ACCESS_TOKEN must be set in the environment.
 ---
 
 # Webex Messaging
 
-Manage Webex rooms and unread messages: fetch rooms with read status, summarize unread conversations, prioritize them, and draft replies. Uses the Webex Node.js SDK with the user's personal access token from the environment only—never hardcode or log the token.
+Fetch Webex rooms (direct + group, recent activity), list them, prioritize for handling, and draft replies. The script uses the **Webex REST API only** (no SDK); token from the environment—never hardcode or log.
 
 ## Prerequisites
 
-- **Node.js 20+** and **npm 10.x** (or yarn).
-- **webex-node** installed: run `npm install` from the project root (see [package.json](package.json)).
+- **Node.js 18** and **npm 10.x** (or yarn).
 - **WEBEX_ACCESS_TOKEN** set in the environment. User obtains a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
+- Optional: **WEBEX_MAX_RECENT** (default 100) to limit how many rooms per type are requested.
 
 If the token is missing, ask the user to set it (e.g. `export WEBEX_ACCESS_TOKEN=your_token`) and re-run.
 
 ## Quick Start
 
 1. Ensure `WEBEX_ACCESS_TOKEN` is set.
-2. From the project root, run:
+2. Ensure node version is 18. Webex SDK doesn't work with any version > 18.
+3. From the project root, run:
    ```bash
    npm install
    node scripts/fetch-unread.mjs
    ```
-3. Parse the JSON from stdout. Use it to list unread rooms, prioritize them (see Workflow below). To summarize or draft replies you need message content—fetch messages per room (e.g. `messages.list`) when needed.
+4. Parse the JSON from stdout. Use it to list rooms, prioritize them (see Workflow below). To summarize or draft replies you need message content—fetch messages per room via REST when needed.
 
-The script does **not** send any messages; it only lists rooms that have unread (no message bodies fetched).
+The script does **not** send any messages. It returns rooms with activity in the last 24h (direct + group). Read status (unread) is **not** available from REST—output includes `readStatusUnavailable: true`.
 
 ## Workflow
 
@@ -42,12 +43,12 @@ The script does **not** send any messages; it only lists rooms that have unread 
 
 ### Step 2: Use the script output
 
-- The script outputs: `{ "rooms": [ ... ], "error": null }`.
-- Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate`. The script only includes rooms that have unread (no `messages` array—it does not fetch message bodies).
+- The script outputs: `{ "rooms": [ ... ], "error": null, "readStatusUnavailable": true }`.
+- Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate` (null from REST). Rooms are direct + group with activity in the last 24h; no message bodies.
 
-### Step 3: Summarize or list unread rooms
+### Step 3: Summarize or list rooms
 
-- From room metadata you can list which spaces have unread and how recent they are (`lastActivityDate`). For a short **gist** of what was said, you need message content—use `webex.messages.list({ roomId, max })` for chosen rooms (see [references/api-usage.md](references/api-usage.md)).
+- Use `lastActivityDate` to see how recent each room is. For a short **gist** of what was said, fetch message content via REST (see [references/api-usage.md](references/api-usage.md)).
 
 ### Step 4: Prioritize for handling
 
@@ -82,10 +83,10 @@ When presenting results to the user, use this structure:
 
 - **Command**: From the project root, run `node scripts/fetch-unread.mjs`.
 - **Input**: None; token is read from `WEBEX_ACCESS_TOKEN`.
-- **Output**: Single JSON object to stdout: `{ "rooms": [ ... ], "error": null }`. Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate` (no message bodies).
+- **Output**: Single JSON object to stdout: `{ "rooms": [ ... ], "error": null, "readStatusUnavailable": true }`. Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate` (no message bodies).
 - **Errors**: Script prints `{ "rooms": [], "error": "message" }` and exits with a non-zero code. Do not log or echo the token.
 
-For detailed SDK calls and limits, see [references/api-usage.md](references/api-usage.md).
+For REST endpoints and optional SDK reference, see [references/api-usage.md](references/api-usage.md).
 
 ## Troubleshooting
 
@@ -93,17 +94,17 @@ For detailed SDK calls and limits, see [references/api-usage.md](references/api-
 |-------|--------|--------|
 | `WEBEX_ACCESS_TOKEN required` | Token not set | Ask user to set `WEBEX_ACCESS_TOKEN` and re-run. |
 | Invalid or expired token | Token revoked or expired | User must generate a new token at Webex for Developers and update the env. |
-| Empty `rooms` or no unread | No unread spaces, or API limit | Normal if user is caught up. Script uses `maxRecent: 100`; see [references/api-usage.md](references/api-usage.md) for caps. |
-| SDK/network errors | Connectivity or Webex outage | Check [Webex Node SDK Troubleshooting](https://developer.webex.com/messaging/docs/sdks/node#troubleshooting). Set `WEBEX_LOG_LEVEL=debug` for more detail. |
+| Empty `rooms` | No rooms with activity in last 24h, or API limit | Normal. Use `WEBEX_MAX_RECENT` to request more (default 100). |
+| REST 4xx/5xx | Bad request or Webex outage | Check [Webex REST API](https://developer.webex.com/docs/api/v1/rooms/list-rooms); ensure firewall allows https://webexapis.com. |
 
 ## Sending a message (optional)
 
 To send a message only when the user explicitly requests it (e.g. "send this reply to that room"):
 
 1. Use the room `id` from the fetch output and the exact text the user approved.
-2. Run a small script or one-off code that calls `webex.messages.create({ roomId, text })` with the token from env. Do not embed the token in code; read from `process.env.WEBEX_ACCESS_TOKEN`.
+2. Call REST `POST https://webexapis.com/v1/messages` with body `{ roomId, text }` and header `Authorization: Bearer <token>`. Read token from env only.
 
-See [references/api-usage.md](references/api-usage.md) for `messages.create` and `memberships.updateLastSeen` (mark as read).
+See [references/api-usage.md](references/api-usage.md) for REST messages and rooms.
 
 ## Resources
 

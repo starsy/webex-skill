@@ -12,35 +12,37 @@ dotenv.config({ path: ENV_PATH, quiet: true });
 consola.options.stdout = process.stderr;
 consola.options.stderr = process.stderr;
 
-// consola.level = -999
-
 const DEFAULT_MAX_RECENT = 30;
 const MAX_RECENT_CAP = 1000;
-/** How many rooms to ask the SDK for when scanning (must be large enough to find matches). */
 const ROOMS_SCAN_LIMIT = 100;
-
 const MESSAGES_PAGE_SIZE = 100;
+const ACTIVITY_HOURS = 24;
+const SDK_READY_TIMEOUT_MS = 60_000;
+
 const ROOM_TYPES = new Set(['direct', 'group']);
 const BOT_EMAIL_SUFFIX = '@webex.bot';
 
-/** Output: all unread direct and group rooms. mentionedMe is set per room for highlighting @mentions. */
-function isOutputRoom(room) {
-    return room?.type === 'direct' || room?.type === 'group';
+function extractItems(response) {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.items)) return response.items;
+    return [];
 }
 
-/** Exclude rooms where any unread message is from a bot. */
-function roomHasNoBotMessages(room) {
-    const messages = room?.unreadMessages ?? [];
-    const hasBot = messages.some((m) => String(m?.personEmail ?? '').endsWith(BOT_EMAIL_SUFFIX));
-    return !hasBot;
+function isOutputRoom(room) {
+    return ROOM_TYPES.has(room?.type);
 }
-const SDK_READY_TIMEOUT_MS = 60000;
+
+function roomHasNoBotMessages(room) {
+    return !(room?.unreadMessages ?? []).some((m) =>
+        String(m?.personEmail ?? '').endsWith(BOT_EMAIL_SUFFIX),
+    );
+}
 
 function out(result) {
     console.log(JSON.stringify(result));
 }
 
-/** Max number of rooms to return (direct + mentionedMe). From WEBEX_MAX_RECENT. */
+/** Max number of rooms to return. From WEBEX_MAX_RECENT. */
 function getMaxRoomsToReturn() {
     const raw = process.env.WEBEX_MAX_RECENT;
     if (!raw) return DEFAULT_MAX_RECENT;
@@ -81,18 +83,6 @@ function inLastXhours(room, hours = 24) {
     return toTs(room.lastActivityDate) >= cutoff;
 }
 
-function extractRoomItems(roomsResponse) {
-    if (Array.isArray(roomsResponse)) return roomsResponse;
-    if (Array.isArray(roomsResponse?.items)) return roomsResponse.items;
-    return [];
-}
-
-function extractMessageItems(messagesResponse) {
-    if (Array.isArray(messagesResponse)) return messagesResponse;
-    if (Array.isArray(messagesResponse?.items)) return messagesResponse.items;
-    return [];
-}
-
 function isUnreadMessage(message, lastSeenTs, meId) {
     const createdTs = toTs(message?.created);
     if (createdTs <= lastSeenTs) return false;
@@ -104,7 +94,7 @@ async function getUnreadMessages(webex, room, meId) {
         roomId: room.id,
         max: MESSAGES_PAGE_SIZE,
     });
-    const messages = extractMessageItems(messagesResponse);
+    const messages = extractItems(messagesResponse);
     const lastSeenTs = toTs(room.lastSeenDate);
     return messages
         .filter((message) => isUnreadMessage(message, lastSeenTs, meId))
@@ -118,28 +108,35 @@ function roomMentionsMe(unreadMessages, meId) {
     );
 }
 
-/** Build people map: key = personEmail, value = personId. Also slim messages (remove roomId, personId). */
+function setDirectRoomTitles(rooms) {
+    for (const room of rooms) {
+        if (room.type !== 'direct' || !room.unreadMessages?.length) continue;
+        const email = room.unreadMessages[room.unreadMessages.length - 1].personEmail;
+        if (email) room.title = email;
+    }
+}
+
+function slimMessage(message) {
+    delete message.roomId;
+    delete message.personId;
+    delete message.roomType;
+    delete message.created;
+    delete message.updated;
+    if (message.markdown != null) delete message.text;
+    if (message.html != null) {
+        delete message.markdown;
+        delete message.text;
+    }
+}
+
 function buildPeopleAndSlimMessages(roomsWithMessages) {
     const people = Object.create(null);
     for (const room of roomsWithMessages) {
         for (const message of room.unreadMessages || []) {
             const email = message.personEmail ?? null;
             const pid = message.personId;
-            if (email && pid && people[email] === undefined) {
-                people[email] = pid;
-            }
-            delete message.roomId;
-            delete message.personId;
-            delete message.roomType;
-            delete message.created;
-            delete message.updated;
-            if (message.markdown != null) {
-                delete message.text;
-            }
-            if (message.html != null) {
-                delete message.markdown;
-                delete message.text;
-            }
+            if (email && pid && people[email] === undefined) people[email] = pid;
+            slimMessage(message);
         }
     }
     return people;
@@ -170,7 +167,6 @@ async function initWebex(accessToken) {
         credentials: {
             access_token: accessToken,
             clientType: 'confidential',
-            // supertoken: { access_token: accessToken }
         },
         hydra: process.env.HYDRA_SERVICE_URL || 'https://webexapis.com/v1',
         hydraServiceUrl: process.env.HYDRA_SERVICE_URL || 'https://webexapis.com/v1',
@@ -188,7 +184,6 @@ async function initWebex(accessToken) {
             validateDomains: true,
         },
     });
-
 
     await withTimeout(new Promise((resolve, reject) => {
         webex.once('ready', resolve);
@@ -226,13 +221,13 @@ async function main() {
         webex.rooms.listWithReadStatus(ROOMS_SCAN_LIMIT),
         webex.people.get('me'),
     ]);
-    const rooms = extractRoomItems(roomsResponse);
+    const rooms = extractItems(roomsResponse);
     consola.info('me:', me);
 
     const normalized = rooms
         .map(normalizeRoom)
         .filter((r) => ROOM_TYPES.has(r.type))
-        .filter((r) => inLastXhours(r, 24))
+        .filter((r) => inLastXhours(r, ACTIVITY_HOURS))
         .sort((a, b) => toTs(b.lastActivityDate) - toTs(a.lastActivityDate));
 
     const unread = normalized.filter((r) => r.isUnread);
@@ -241,12 +236,7 @@ async function main() {
         .filter(isOutputRoom)
         .filter(roomHasNoBotMessages)
         .slice(0, maxRoomsToReturn);
-    for (const room of roomsFiltered) {
-        if (room.type === 'direct' && room.unreadMessages?.length > 0) {
-            const lastMessage = room.unreadMessages[room.unreadMessages.length - 1];
-            if (lastMessage.personEmail) room.title = lastMessage.personEmail;
-        }
-    }
+    setDirectRoomTitles(roomsFiltered);
     const people = buildPeopleAndSlimMessages(roomsFiltered);
     out({
         rooms: roomsFiltered,
@@ -254,7 +244,7 @@ async function main() {
         stats: {
             total: normalized.length,
             unread: roomsFiltered.length,
-            read: normalized.length - unreadWithMessages.length,
+            read: normalized.length - unread.length,
         },
         error: null,
     });

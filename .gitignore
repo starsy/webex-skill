@@ -1,0 +1,7 @@
+node_modules
+.cursor/**/skills/**
+.env
+.env.*
+!.env.example
+
+
