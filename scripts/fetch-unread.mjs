@@ -13,21 +13,19 @@
  * Env: WEBEX_ACCESS_TOKEN (required), WEBEX_MAX_RECENT, WEBEX_ACTIVITY_HOURS
  */
 import { Command } from 'commander';
-import { consola } from 'consola';
-import WebexNode from 'webex-node';
-import dotenv from 'dotenv';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import {
+    consola,
+    initWebex,
+    loadEnv,
+    out,
+    setupConsola,
+} from './webex-common.mjs';
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = resolve(SCRIPT_DIR, '..');
-const ENV_PATH = resolve(PROJECT_ROOT, '.env');
+const { PROJECT_ROOT } = loadEnv(import.meta.url);
+setupConsola();
 const OUTPUT_DIR = resolve(PROJECT_ROOT, 'output');
-dotenv.config({ path: ENV_PATH, quiet: true });
-
-consola.options.stdout = process.stderr;
-consola.options.stderr = process.stderr;
 
 const DEFAULT_MAX_RECENT = 30;
 const MAX_RECENT_CAP = 1000;
@@ -36,8 +34,6 @@ const MESSAGES_PAGE_SIZE = 100;
 const DEFAULT_ACTIVITY_HOURS = 24;
 const MIN_ACTIVITY_HOURS = 1;
 const MAX_ACTIVITY_HOURS = 720; // 30 days
-const SDK_READY_TIMEOUT_MS = 60_000;
-
 const ROOM_TYPES = new Set(['direct', 'group']);
 const BOT_EMAIL_SUFFIX = '@webex.bot';
 
@@ -55,11 +51,6 @@ function roomHasNoBotMessages(room) {
     return !(room?.unreadMessages ?? []).some((m) =>
         String(m?.personEmail ?? '').endsWith(BOT_EMAIL_SUFFIX),
     );
-}
-
-/** Print a single JSON line to stdout (for agent consumption). */
-function out(result) {
-    console.log(JSON.stringify(result));
 }
 
 /** ISO-like string safe for filenames: 2026-02-15T12-00-00Z (colons replaced). */
@@ -93,13 +84,6 @@ function toTs(value) {
     if (!value) return 0;
     const t = new Date(value).getTime();
     return Number.isFinite(t) ? t : 0;
-}
-
-function withTimeout(promise, ms, label) {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timeout (${ms}ms)`)), ms)),
-    ]);
 }
 
 function normalizeRoom(room) {
@@ -198,38 +182,6 @@ async function attachUnreadMessages(webex, unreadRooms, meId) {
             }
         }),
     );
-}
-
-async function initWebex(accessToken) {
-    const webex = WebexNode.init({
-        credentials: {
-            access_token: accessToken,
-            clientType: 'confidential',
-        },
-        hydra: process.env.HYDRA_SERVICE_URL || 'https://webexapis.com/v1',
-        hydraServiceUrl: process.env.HYDRA_SERVICE_URL || 'https://webexapis.com/v1',
-        config: {
-            services: {
-                discovery: {
-                    hydra: process.env.HYDRA_SERVICE_URL || 'https://api.ciscospark.com/v1',
-                    u2c: process.env.U2C_SERVICE_URL || 'https://u2c.wbx2.com/u2c/api/v1',
-                },
-            },
-            device: {
-                validateDomains: true,
-                ephemeral: true,
-            },
-            validateDomains: true,
-        },
-    });
-
-    await withTimeout(new Promise((resolve, reject) => {
-        webex.once('ready', resolve);
-        webex.once('error', reject);
-    }), SDK_READY_TIMEOUT_MS, 'SDK ready');
-    if (!webex.canAuthorize) throw new Error('SDK not authorized');
-
-    return webex;
 }
 
 async function main() {

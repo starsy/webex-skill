@@ -15,34 +15,16 @@
  *   WEBEX_ACCESS_TOKEN - required
  */
 import { Command } from 'commander';
-import { consola } from 'consola';
-import WebexNode from 'webex-node';
-import dotenv from 'dotenv';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createInterface } from 'node:readline';
+import {
+    consola,
+    initWebex,
+    loadEnv,
+    out,
+    setupConsola,
+} from './webex-common.mjs';
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const ENV_PATH = resolve(SCRIPT_DIR, '..', '.env');
-dotenv.config({ path: ENV_PATH, quiet: true });
-
-consola.options.stdout = process.stderr;
-consola.options.stderr = process.stderr;
-
-const SDK_READY_TIMEOUT_MS = 60_000;
-
-function out(result) {
-    console.log(JSON.stringify(result));
-}
-
-function withTimeout(promise, ms, label) {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`${label} timeout (${ms}ms)`)), ms),
-        ),
-    ]);
-}
+loadEnv(import.meta.url);
+setupConsola();
 
 function isEmail(value) {
     return typeof value === 'string' && value.includes('@');
@@ -52,48 +34,6 @@ const sendMessageProgram = new Command();
 sendMessageProgram
     .option('-t, --to <to>', 'Room ID or person email (recipient)')
     .option('-m, --message <message>', 'Markdown body of the message');
-
-async function readStdin() {
-    const rl = createInterface({ input: process.stdin, terminal: false });
-    const lines = [];
-    for await (const line of rl) lines.push(line);
-    return lines.join('\n').trim();
-}
-
-async function initWebex(accessToken) {
-    const webex = WebexNode.init({
-        credentials: {
-            access_token: accessToken,
-            clientType: 'confidential',
-        },
-        hydra: process.env.HYDRA_SERVICE_URL || 'https://webexapis.com/v1',
-        hydraServiceUrl: process.env.HYDRA_SERVICE_URL || 'https://webexapis.com/v1',
-        config: {
-            services: {
-                discovery: {
-                    hydra: process.env.HYDRA_SERVICE_URL || 'https://api.ciscospark.com/v1',
-                    u2c: process.env.U2C_SERVICE_URL || 'https://u2c.wbx2.com/u2c/api/v1',
-                },
-            },
-            device: {
-                validateDomains: true,
-                ephemeral: true,
-            },
-            validateDomains: true,
-        },
-    });
-
-    await withTimeout(
-        new Promise((resolve, reject) => {
-            webex.once('ready', resolve);
-            webex.once('error', reject);
-        }),
-        SDK_READY_TIMEOUT_MS,
-        'SDK ready',
-    );
-    if (!webex.canAuthorize) throw new Error('SDK not authorized');
-    return webex;
-}
 
 async function main() {
     const token = process.env.WEBEX_ACCESS_TOKEN;
@@ -111,9 +51,6 @@ async function main() {
     }
 
     let markdown = (opts.message ?? process.env.WEBEX_MESSAGE ?? '').trim();
-    if (!markdown && !process.stdin.isTTY) {
-        markdown = await readStdin();
-    }
     if (!markdown) {
         out({ ok: false, error: '--message / -m, WEBEX_MESSAGE, or stdin required' });
         process.exit(1);
