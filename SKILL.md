@@ -15,6 +15,7 @@ Fetch Webex rooms (direct + group) with unread messages and read status, list th
 ## Prerequisites
 
 - **Node.js <= 18** and **npm 10.x** (or yarn).
+- If you rely on `nvm`, source it first (`source ~/.nvm/nvm.sh && nvm use 18`, or the equivalent for your shell) so the scripts run with the expected Node 18 binary and npm 10.
 - **WEBEX_ACCESS_TOKEN** set in the environment or `.env`. Obtain a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
 - Optional env: **WEBEX_MAX_RECENT** (default 30), **WEBEX_ACTIVITY_HOURS** (default 24). These can be overridden by CLI options.
 
