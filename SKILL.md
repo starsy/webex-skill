@@ -46,7 +46,7 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 ### Output Style
 
-- Output your reply in markdown format
+- Output your reply in markdown format. Always quote room name or people's name like this: `room_name` or `people_name`.
 - Never use "```markdown" to quote the reply which is in markdown format, Webex knows how to interprete and render markdown content.
 - If user is talking to you via a Webex channel, please convert the markdown table into a list before replying -- Webex client doesn't render markdown table. Use markdown table in conversation via webchat channel is perfectly fine.
 
