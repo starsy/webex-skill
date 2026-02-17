@@ -5,7 +5,7 @@ license: Apache-2.0
 metadata:
   author: webex-skill
   version: "1.0"
-compatibility: Node.js 20+, npm 10.x. WEBEX_ACCESS_TOKEN must be set in the environment.
+compatibility: Node.js <= 18, npm 10.x. WEBEX_ACCESS_TOKEN must be set in the environment.
 ---
 
 # Webex Messaging
@@ -14,7 +14,7 @@ Fetch Webex rooms (direct + group) with unread messages and read status, list th
 
 ## Prerequisites
 
-- **Node.js 20+** and **npm 10.x** (or yarn).
+- **Node.js <= 18** and **npm 10.x** (or yarn).
 - **WEBEX_ACCESS_TOKEN** set in the environment or `.env`. Obtain a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
 - Optional env: **WEBEX_MAX_RECENT** (default 30), **WEBEX_ACTIVITY_HOURS** (default 24). These can be overridden by CLI options.
 
@@ -29,14 +29,14 @@ If the token is missing, ask the user to set it (e.g. in `.env` or `export WEBEX
    node scripts/fetch-unread.mjs
    ```
    Optional CLI: `node scripts/fetch-unread.mjs --hours 12 --max-rooms 10`.
-3. Parse the JSON from stdout: `rooms` (with `unreadMessages`, `mentionedMe`, etc.), `people`, `stats`, `error`.
+3. Parse the JSON line from stdout: `{ "outputPath": "<path>", "error": null }`. The message fetch result is saved under the `output/` folder as `message-history-<since>-<to>.json`. **Use the returned `outputPath` and read that file with your tools to extract rooms and messages**; do not expect the full payload on stdout.
 4. To send a message to a room or person:
    ```bash
    node scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
    node scripts/send-message.mjs -t ROOM_ID -m "Room message"
    ```
 
-The fetch script returns **unread** direct and group rooms (with message bodies and read status from the SDK). The send script posts a **markdown** message to a room ID or person email.
+The fetch script writes **unread** direct and group rooms (with message bodies and read status) to a JSON file in `output/` and prints only the file path to stdout. The send script posts a **markdown** message to a room ID or person email.
 
 ## Workflow
 
@@ -44,11 +44,12 @@ The fetch script returns **unread** direct and group rooms (with message bodies 
 
 - Check that `WEBEX_ACCESS_TOKEN` is set in `.env` or the environment. If not, tell the user to set it and try again.
 - From the project root, run: `node scripts/fetch-unread.mjs` (optionally with `--hours N` and `--max-rooms N`).
-- Capture stdout. On failure the script prints a single JSON line with an `error` field and exits non-zero.
+- Capture stdout: one JSON line `{ "outputPath": "<absolute path>", "error": null }`. On failure: `{ "outputPath": null, "error": "message" }` and exits non-zero.
+- **Read the file at `outputPath`** using your file-read tool to get the full result. Do not parse rooms from stdout.
 
-### Step 2: Use the script output
+### Step 2: Use the script output file
 
-- The script outputs: `{ "rooms": [ ... ], "people": { ... }, "stats": { ... }, "error": null }`.
+- The file at `outputPath` contains: `{ "rooms": [ ... ], "people": { ... }, "stats": { ... }, "error": null }`.
 - Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate`, `isUnread`, `unreadMessages`, `unreadMessageCount`, `mentionedMe`. Direct room titles are normalized to the other person’s email. Rooms are direct + group with unread activity in the last N hours (default 24); rooms where every unread message is from a bot are excluded.
 
 ### Step 3: Summarize or list rooms
@@ -98,12 +99,12 @@ When presenting results to the user, use this structure:
 
   Examples: `--hours 12 --max-rooms 10`, `-H 48 -n 5`, `--hours=6 --max-rooms=20`.
 - **Input**: Token from `WEBEX_ACCESS_TOKEN`; optional env `WEBEX_MAX_RECENT`, `WEBEX_ACTIVITY_HOURS`.
-- **Output**: Single JSON to stdout; see [Response schema (fetch-unread.mjs)](#response-schema-fetch-unreadmjs) below.
-- **Errors**: Prints `{ "rooms": [], "error": "message" }` and exits non-zero. Do not log or echo the token.
+- **Output**: Writes the full result to `output/message-history-<since>-<to>.json` (since/to are ISO-like timestamps in the filename). Prints a single JSON line to stdout: `{ "outputPath": "<absolute path to file>", "error": null }`. **Extract rooms and messages by reading the file at `outputPath`** (e.g. with a read-file tool); do not expect the payload on stdout.
+- **Errors**: Prints `{ "outputPath": null, "error": "message" }` and exits non-zero. Do not log or echo the token.
 
 #### Response schema (fetch-unread.mjs)
 
-Root object schema for the JSON written to stdout:
+Schema of the **JSON file** written to `outputPath` (not stdout). Use this when parsing the file to extract rooms and messages:
 
 ```yaml
 type: object
@@ -162,6 +163,7 @@ required: [rooms, people, stats, error]
 - **Input**: Token from `WEBEX_ACCESS_TOKEN`; recipient and body from CLI or env (or message from stdin).
 - **Output**: Success: `{ "ok": true, "message": { "id", "roomId", "created" }, "error": null }`. Failure: `{ "ok": false, "error": "message" }`.
 - **Behavior**: If `--to`/`WEBEX_TO` contains `@`, the message is sent to that person (1:1); otherwise it is treated as a room ID.
+- **--message option**: The message content to be sent must be quoted properly as an CLI option.
 
 For REST endpoints and optional SDK reference, see [references/api-usage.md](references/api-usage.md).
 
@@ -171,7 +173,8 @@ For REST endpoints and optional SDK reference, see [references/api-usage.md](ref
 |-------|--------|--------|
 | `WEBEX_ACCESS_TOKEN required` | Token not set | Ask user to set `WEBEX_ACCESS_TOKEN` (e.g. in `.env`) and re-run. |
 | Invalid or expired token | Token revoked or expired | User must generate a new token at Webex for Developers and update the env. |
-| Empty `rooms` | No unread rooms in the time window, or filters exclude all | Try `--hours 48` or `--max-rooms`; check that direct/group and bot filters are expected. |
+| `outputPath` is null | Script failed (see `error` on stdout) | Fix token, network, or SDK issue; re-run. |
+| Empty `rooms` in file | No unread rooms in the time window, or filters exclude all | After reading the file at `outputPath`, if `rooms` is empty try `--hours 48` or `--max-rooms`; check direct/group and bot filters. |
 | SDK / network errors | Webex outage or firewall | Ensure firewall allows https://webexapis.com and discovery endpoints; see [references/api-usage.md](references/api-usage.md). |
 | send-message: `--to` or WEBEX_TO required | Recipient not provided | Pass `--to <roomId_or_email>` or set WEBEX_TO. |
 
@@ -179,7 +182,7 @@ For REST endpoints and optional SDK reference, see [references/api-usage.md](ref
 
 When the user explicitly asks to send a message (e.g. “send this reply to that room”):
 
-1. Use the room `id` or person email from the fetch output and the **exact** text the user approved.
+1. Get the room `id` or person email from the **message history file** at `outputPath` (e.g. `rooms[].id` for room ID, or `rooms[].title` for direct-DM email). Use the **exact** text the user approved.
 2. Run: `node scripts/send-message.mjs --to <roomId_or_email> --message "<user-approved markdown>"` (or set `WEBEX_TO` and `WEBEX_MESSAGE` / stdin). Token is read from env only; never hardcode it.
 
 See [references/api-usage.md](references/api-usage.md) for REST/SDK reference.

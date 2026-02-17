@@ -2,6 +2,10 @@
 /**
  * Fetch unread Webex rooms (direct + group) with messages.
  *
+ * Writes the result to output/message-history-<since>-<to>.json and prints only
+ * the output file path to stdout. The agent should read that file and extract
+ * rooms and messages using appropriate tools.
+ *
  * Options (CLI overrides env):
  *   --hours, -H         Only rooms with activity in the last N hours (default: 24)
  *   --max-rooms, -n     Max number of rooms to return (default: WEBEX_MAX_RECENT or 30)
@@ -11,11 +15,14 @@
 import { consola } from 'consola';
 import WebexNode from 'webex-node';
 import dotenv from 'dotenv';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const ENV_PATH = resolve(SCRIPT_DIR, '..', '.env');
+const PROJECT_ROOT = resolve(SCRIPT_DIR, '..');
+const ENV_PATH = resolve(PROJECT_ROOT, '.env');
+const OUTPUT_DIR = resolve(PROJECT_ROOT, 'output');
 dotenv.config({ path: ENV_PATH, quiet: true });
 
 consola.options.stdout = process.stderr;
@@ -49,8 +56,14 @@ function roomHasNoBotMessages(room) {
     );
 }
 
+/** Print a single JSON line to stdout (for agent consumption). */
 function out(result) {
     console.log(JSON.stringify(result));
+}
+
+/** ISO-like string safe for filenames: 2026-02-15T12-00-00Z (colons replaced). */
+function toFileSafeIso(date) {
+    return date.toISOString().replace(/:/g, '-').replace(/\.\d{3}/, '');
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -276,7 +289,7 @@ async function main() {
         .slice(0, maxRoomsToReturn);
     setDirectRoomTitles(roomsFiltered);
     const people = buildPeopleAndSlimMessages(roomsFiltered);
-    out({
+    const payload = {
         rooms: roomsFiltered,
         people,
         stats: {
@@ -285,12 +298,21 @@ async function main() {
             read: normalized.length - unread.length,
         },
         error: null,
-    });
+    };
+
+    const since = new Date(Date.now() - activityHours * 60 * 60 * 1000);
+    const to = new Date();
+    const filename = `message-history-${toFileSafeIso(since)}-${toFileSafeIso(to)}.json`;
+    await mkdir(OUTPUT_DIR, { recursive: true });
+    const outputPath = resolve(OUTPUT_DIR, filename);
+    await writeFile(outputPath, JSON.stringify(payload, null, 0), 'utf8');
+    consola.success(`Wrote ${outputPath}`);
+    out({ outputPath, error: null });
     process.exit(0);
 }
 
 main().catch((err) => {
     consola.error(err?.message || err);
-    out({ rooms: [], error: err?.message || String(err) });
+    out({ outputPath: null, error: err?.message || String(err) });
     process.exit(1);
 });
