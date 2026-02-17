@@ -16,7 +16,7 @@ Fetch Webex rooms (direct + group) with unread messages and read status, list th
 
 - **Node.js <= 18** and **npm 10.x** (or yarn).
 - Change working directory to `~/.openclaw/workspace/skills/webex-skill` before executing scripts
-- If you rely on `nvm`, source it first (`source ~/.nvm/nvm.sh && nvm use 18`, or the equivalent for your shell) so the scripts run with the expected Node 18 binary and npm 10.
+- Node 18 has been installed via brew at `/opt/homebrew/opt/node@18/bin/node`
 - **WEBEX_ACCESS_TOKEN** set in the `~/.openclaw/workspace/skills/webex-skill/.env`. Obtain a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
 - Optional env: **WEBEX_MAX_RECENT** (default 30), **WEBEX_ACTIVITY_HOURS** (default 24). These can be overridden by CLI options.
 
@@ -25,19 +25,19 @@ If the token is missing, ask the user to set it (e.g. in `~/.openclaw/workspace/
 ## Quick Start
 
 1. Ensure `WEBEX_ACCESS_TOKEN` is set (e.g. in `.env` in the project root).
-2. From the project root:
+2. Always use `/opt/homebrew/opt/node@18/bin/node` as `node`, `export NODE=/opt/homebrew/opt/node@18/bin/node`
+3. From the project root:
    ```bash
    cd ~/.openclaw/workspace/skills/webex-skill
-   npm install
-   node scripts/fetch-unread.mjs
+   $NODE scripts/fetch-unread.mjs
    ```
    Optional CLI: `node scripts/fetch-unread.mjs --hours 12 --max-rooms 10`.
-3. Parse the JSON line from stdout: `{ "outputPath": "<path>", "error": null }`. The message fetch result is saved under the `output/` folder as `message-history-<since>-<to>.json`. **Use the returned `outputPath` and read that file with your tools to extract rooms and messages**; do not expect the full payload on stdout.
-4. To send a message to a room or person:
+4. Parse the JSON line from stdout: `{ "outputPath": "<path>", "error": null }`. The message fetch result is saved under the `output/` folder as `message-history-<since>-<to>.json`. **Use the returned `outputPath` and read that file with your tools to extract rooms and messages**; do not expect the full payload on stdout.
+5. To send a message to a room or person:
    ```bash
    cd ~/.openclaw/workspace/skills/webex-skill
-   node scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
-   node scripts/send-message.mjs -t ROOM_ID -m "Room message"
+   $NODE scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
+   $NODE scripts/send-message.mjs -t ROOM_ID -m "Room message"
    ```
 
 The fetch script writes **unread** direct and group rooms (with message bodies and read status) to a JSON file in `output/` and prints only the file path to stdout. The send script posts a **markdown** message to a room ID or person email.
@@ -99,7 +99,7 @@ When presenting results to the user, use this structure:
 
 ### fetch-unread.mjs
 
-- **Command**: `node scripts/fetch-unread.mjs` (from project root).
+- **Command**: `$NODE scripts/fetch-unread.mjs` (from project root).
 - **CLI options** (override env when provided):
 
   | Option | Short | Description | Default / env |
@@ -161,7 +161,7 @@ required: [rooms, people, stats, error]
 
 ### send-message.mjs
 
-- **Command**: `node scripts/send-message.mjs` (from project root).
+- **Command**: `$NODE scripts/send-message.mjs` (from project root).
 - **CLI options** (override env when provided):
 
   | Option | Short | Description | Default / env |
