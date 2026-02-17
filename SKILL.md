@@ -55,6 +55,7 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 - The file at `outputPath` contains: `{ "rooms": [ ... ], "people": { ... }, "stats": { ... }, "error": null }`.
 - Each room has `id`, `title`, `type`, `lastActivityDate`, `lastSeenDate`, `isUnread`, `unreadMessages`, `unreadMessageCount`, `mentionedMe`. Direct room titles are normalized to the other person’s email. Rooms are direct + group with unread activity in the last N hours (default 24); rooms where every unread message is from a bot are excluded.
+- Use `jq` command to **extract rooms and unread messages from the json file at `outputPath`**; do not expect the payload on stdout.
 
 ### Step 3: Summarize or list rooms
 
@@ -114,8 +115,6 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 - **Errors**: Prints `{ "outputPath": null, "error": "message" }` and exits non-zero. Do not log or echo the token.
 
 #### Response schema (fetch-unread.mjs)
-
-- Use `jq` to **extract rooms and messages from the json file at `outputPath`**; do not expect the payload on stdout.
 
 Schema of the **JSON file** written to `outputPath` (not stdout). Use this to construct `jq` query when parsing the file to extract rooms and messages:
 
