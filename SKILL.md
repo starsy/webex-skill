@@ -1,5 +1,5 @@
 ---
-name: webex-messaging
+name: webex-skill
 description: Fetch Webex rooms and unread messages, summarize conversations, prioritize for handling, and send messages using the Webex Node.js SDK. Use when the user wants to manage Webex messages, catch up on unread, get summaries of unread conversations, prioritize which to handle first, draft replies, or send a message to a room or person.
 license: Apache-2.0
 metadata:
@@ -8,7 +8,7 @@ metadata:
 compatibility: Node.js <= 18, npm 10.x. WEBEX_ACCESS_TOKEN must be set in the environment.
 ---
 
-# Webex Messaging
+# Webex Skill
 
 Fetch Webex rooms (direct + group) with unread messages and read status, list them, prioritize for handling, draft replies, and optionally send messages—using the **Webex Node.js SDK**. Token and options come from the environment or CLI; never hardcode or log the token.
 
