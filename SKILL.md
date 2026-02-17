@@ -84,15 +84,19 @@ When presenting results to the user, use this markdown structure:
 
 ```
 ## Unread summary
-- **[Room title]**: [3 - 5 sentence gist of unread messages.]
+- **[Room title]**
+  - [3 - 5 points gist of unread messages.]
+  - ...
 
 ## Priority order
-1. [Room title] – [Brief reason, e.g. direct, latest activity]
+1. [Room title] 
+  – [Brief reason, e.g. direct, latest activity]
 2. ...
 
 ## Draft replies
-- **[Room title]**: Suggested reply – "[draft text]"
-  (Alternative: "[optional second draft]")
+- **[Room title]**: Suggested reply 
+  – "[draft text]"
+  - (Alternative: "[optional second draft]")
 ```
 
 ## Script usage
