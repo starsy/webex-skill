@@ -44,6 +44,12 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 ## Workflow
 
+### Output Style
+
+- Output your reply in markdown format
+- Never use "```markdown" to quote the reply which is in markdown format, Webex knows how to interprete and render markdown content.
+- If user is talking to you via a Webex channel, please convert the markdown table into a list before replying -- Webex client doesn't render markdown table. Use markdown table in conversation via webchat channel is perfectly fine.
+
 ### Step 1: Ensure token and run fetch script
 
 - Check that `WEBEX_ACCESS_TOKEN` is set in `~/.openclaw/workspace/skills/webex-skill/.env`. If not, tell the user to set it and try again.
@@ -181,6 +187,7 @@ For REST endpoints and optional SDK reference, see [references/api-usage.md](ref
 | Empty `rooms` in file | No unread rooms in the time window, or filters exclude all | After reading the file at `outputPath`, if `rooms` is empty try `--hours 48` or `--max-rooms`; check direct/group and bot filters. |
 | SDK / network errors | Webex outage or firewall | Ensure firewall allows https://webexapis.com and discovery endpoints; see [references/api-usage.md](references/api-usage.md). |
 | send-message: `--to` or WEBEX_TO required | Recipient not provided | Pass `--to <roomId_or_email>` or set WEBEX_TO. |
+
 
 ## Sending a message (optional)
 
