@@ -12,6 +12,7 @@
  *
  * Env: WEBEX_ACCESS_TOKEN (required), WEBEX_MAX_RECENT, WEBEX_ACTIVITY_HOURS
  */
+import { Command } from 'commander';
 import { consola } from 'consola';
 import WebexNode from 'webex-node';
 import dotenv from 'dotenv';
@@ -66,22 +67,10 @@ function toFileSafeIso(date) {
     return date.toISOString().replace(/:/g, '-').replace(/\.\d{3}/, '');
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
-    const opts = { hours: null, maxRooms: null };
-    for (let i = 0; i < argv.length; i++) {
-        const arg = argv[i];
-        if (arg === '--hours' || arg === '-H') {
-            opts.hours = argv[++i];
-        } else if (arg === '--max-rooms' || arg === '-n') {
-            opts.maxRooms = argv[++i];
-        } else if (arg.startsWith('--hours=')) {
-            opts.hours = arg.slice(8);
-        } else if (arg.startsWith('--max-rooms=')) {
-            opts.maxRooms = arg.slice(12);
-        }
-    }
-    return opts;
-}
+const fetchUnreadProgram = new Command();
+fetchUnreadProgram
+    .option('-H, --hours <hours>', 'Only rooms with activity in the last N hours')
+    .option('-n, --max-rooms <maxRooms>', 'Max number of rooms to return');
 
 /** Max number of rooms to return. CLI/Webex max-rooms overrides WEBEX_MAX_RECENT. */
 function getMaxRoomsToReturn(cliMaxRooms = null) {
@@ -244,16 +233,17 @@ async function initWebex(accessToken) {
 }
 
 async function main() {
-    consola.box('Webex read-status');
+    consola.box('Webex Fetch Unread Rooms and Messages');
     const token = process.env.WEBEX_ACCESS_TOKEN;
     if (!token || !token.trim()) {
         out({ rooms: [], error: 'WEBEX_ACCESS_TOKEN required' });
         process.exit(1);
     }
 
-    const cli = parseArgs();
-    const activityHours = getActivityHours(cli.hours);
-    const maxRoomsToReturn = getMaxRoomsToReturn(cli.maxRooms);
+    fetchUnreadProgram.parse(process.argv);
+    const opts = fetchUnreadProgram.opts();
+    const activityHours = getActivityHours(opts.hours);
+    const maxRoomsToReturn = getMaxRoomsToReturn(opts.maxRooms);
     consola.info(`activityHours=${activityHours}, maxRoomsToReturn=${maxRoomsToReturn}`);
 
     let webex;

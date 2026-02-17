@@ -14,6 +14,7 @@
  * Env:
  *   WEBEX_ACCESS_TOKEN - required
  */
+import { Command } from 'commander';
 import { consola } from 'consola';
 import WebexNode from 'webex-node';
 import dotenv from 'dotenv';
@@ -47,22 +48,10 @@ function isEmail(value) {
     return typeof value === 'string' && value.includes('@');
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
-    const opts = { to: null, message: null };
-    for (let i = 0; i < argv.length; i++) {
-        const arg = argv[i];
-        if (arg === '--to' || arg === '-t') {
-            opts.to = argv[++i] ?? '';
-        } else if (arg === '--message' || arg === '-m') {
-            opts.message = argv[++i] ?? '';
-        } else if (arg.startsWith('--to=')) {
-            opts.to = arg.slice(5);
-        } else if (arg.startsWith('--message=')) {
-            opts.message = arg.slice(10);
-        }
-    }
-    return opts;
-}
+const sendMessageProgram = new Command();
+sendMessageProgram
+    .option('-t, --to <to>', 'Room ID or person email (recipient)')
+    .option('-m, --message <message>', 'Markdown body of the message');
 
 async function readStdin() {
     const rl = createInterface({ input: process.stdin, terminal: false });
@@ -113,14 +102,15 @@ async function main() {
         process.exit(1);
     }
 
-    const cli = parseArgs();
-    const to = (cli.to ?? process.env.WEBEX_TO ?? '').trim();
+    sendMessageProgram.parse(process.argv);
+    const opts = sendMessageProgram.opts();
+    const to = (opts.to ?? process.env.WEBEX_TO ?? '').trim();
     if (!to) {
         out({ ok: false, error: '--to / -t or WEBEX_TO required (room ID or person email)' });
         process.exit(1);
     }
 
-    let markdown = (cli.message ?? process.env.WEBEX_MESSAGE ?? '').trim();
+    let markdown = (opts.message ?? process.env.WEBEX_MESSAGE ?? '').trim();
     if (!markdown && !process.stdin.isTTY) {
         markdown = await readStdin();
     }

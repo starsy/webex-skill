@@ -10,6 +10,7 @@
     "node": "<=18"
   },
   "dependencies": {
+    "commander": "^13.1.0",
     "consola": "^3.2.3",
     "dotenv": "^17.3.1",
     "request": "^2.88.2",
