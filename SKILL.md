@@ -44,12 +44,6 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 ## Workflow
 
-### Output Style
-
-- Output your reply in markdown format. Always quote room name or people's name like this: `room_name` or `people_name`.
-- Never use "```markdown" to quote the reply which is in markdown format, Webex knows how to interprete and render markdown content.
-- If user is talking to you via a Webex channel, please convert the markdown table into a list before replying -- Webex client doesn't render markdown table. Use markdown table in conversation via webchat channel is perfectly fine.
-
 ### Step 1: Ensure token and run fetch script
 
 - Check that `WEBEX_ACCESS_TOKEN` is set in `~/.openclaw/workspace/skills/webex-skill/.env`. If not, tell the user to set it and try again.
@@ -80,7 +74,10 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 ## Output format
 
-When presenting results to the user, use this markdown structure:
+- Output your reply in markdown format. Always quote room name or people's name like this: `room_name` or `people_name`.
+- Never use "```markdown" to quote the reply which is in markdown format, Webex knows how to interprete and render markdown content.
+- If user is talking to you via a Webex channel, please convert the markdown table into a list before replying -- Webex client doesn't render markdown table. Use markdown table in conversation via webchat channel is perfectly fine.
+- When presenting results to the user, use this markdown structure:
 
 ```
 ## Unread summary
@@ -113,10 +110,12 @@ When presenting results to the user, use this markdown structure:
 
   Examples: `--hours 12 --max-rooms 10`, `-H 48 -n 5`, `--hours=6 --max-rooms=20`.
 - **Input**: Token from `WEBEX_ACCESS_TOKEN`; optional env `WEBEX_MAX_RECENT`, `WEBEX_ACTIVITY_HOURS`.
-- **Output**: Writes the full result to `output/message-history-<since>-<to>.json` (since/to are ISO-like timestamps in the filename). Prints a single JSON line to stdout: `{ "outputPath": "<absolute path to file>", "error": null }`. **Extract rooms and messages by using `jq` to read from the json file at `outputPath`** (e.g. with a read-file tool); do not expect the payload on stdout.
+- **Output**: Writes the full result to `output/message-history-<since>-<to>.json` (since/to are ISO-like timestamps in the filename). Prints a single JSON line to stdout: `{ "outputPath": "<absolute path to file>", "error": null }`. You must start extraction after this json file has been populated.
 - **Errors**: Prints `{ "outputPath": null, "error": "message" }` and exits non-zero. Do not log or echo the token.
 
 #### Response schema (fetch-unread.mjs)
+
+- Use `jq` to **extract rooms and messages from the json file at `outputPath`**; do not expect the payload on stdout.
 
 Schema of the **JSON file** written to `outputPath` (not stdout). Use this to construct `jq` query when parsing the file to extract rooms and messages:
 
