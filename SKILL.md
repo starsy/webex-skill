@@ -29,15 +29,15 @@ If the token is missing, ask the user to set it (e.g. in `~/.openclaw/workspace/
 3. From the project root:
    ```bash
    cd ~/.openclaw/workspace/skills/webex-skill
-   $NODE scripts/fetch-unread.mjs
+   source .env && $NODE scripts/fetch-unread.mjs
    ```
    Optional CLI: `node scripts/fetch-unread.mjs --hours 12 --max-rooms 10`.
 4. Parse the JSON line from stdout: `{ "outputPath": "<path>", "error": null }`. The message fetch result is saved under the `output/` folder as `message-history-<since>-<to>.json`. **Use the returned `outputPath` and read that file with your tools to extract rooms and messages**; do not expect the full payload on stdout.
 5. To send a message to a room or person:
    ```bash
    cd ~/.openclaw/workspace/skills/webex-skill
-   $NODE scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
-   $NODE scripts/send-message.mjs -t ROOM_ID -m "Room message"
+   source .env && $NODE scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
+   source .env && $NODE scripts/send-message.mjs -t ROOM_ID -m "Room message"
    ```
 
 The fetch script writes **unread** direct and group rooms (with message bodies and read status) to a JSON file in `output/` and prints only the file path to stdout. The send script posts a **markdown** message to a room ID or person email.
@@ -80,11 +80,11 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 ## Output format
 
-When presenting results to the user, use this structure:
+When presenting results to the user, use this markdown structure:
 
-```markdown
+```
 ## Unread summary
-- **[Room title]**: [One- or two-sentence gist of unread messages.]
+- **[Room title]**: [3 - 5 sentence gist of unread messages.]
 
 ## Priority order
 1. [Room title] – [Brief reason, e.g. direct, latest activity]
@@ -99,7 +99,7 @@ When presenting results to the user, use this structure:
 
 ### fetch-unread.mjs
 
-- **Command**: `$NODE scripts/fetch-unread.mjs` (from project root).
+- **Command**: `source .env && $NODE scripts/fetch-unread.mjs` (from project root).
 - **CLI options** (override env when provided):
 
   | Option | Short | Description | Default / env |
@@ -161,7 +161,7 @@ required: [rooms, people, stats, error]
 
 ### send-message.mjs
 
-- **Command**: `$NODE scripts/send-message.mjs` (from project root).
+- **Command**: `source .env && $NODE scripts/send-message.mjs` (from project root).
 - **CLI options** (override env when provided):
 
   | Option | Short | Description | Default / env |
