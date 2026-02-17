@@ -15,17 +15,19 @@ Fetch Webex rooms (direct + group) with unread messages and read status, list th
 ## Prerequisites
 
 - **Node.js <= 18** and **npm 10.x** (or yarn).
+- Change working directory to `~/.openclaw/workspace/skills/webex-skill` before executing scripts
 - If you rely on `nvm`, source it first (`source ~/.nvm/nvm.sh && nvm use 18`, or the equivalent for your shell) so the scripts run with the expected Node 18 binary and npm 10.
-- **WEBEX_ACCESS_TOKEN** set in the environment or `.env`. Obtain a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
+- **WEBEX_ACCESS_TOKEN** set in the `~/.openclaw/workspace/skills/webex-skill/.env`. Obtain a personal access token from [Webex for Developers](https://developer.webex.com/) (Getting Started). Use for testing only; do not hardcode or log.
 - Optional env: **WEBEX_MAX_RECENT** (default 30), **WEBEX_ACTIVITY_HOURS** (default 24). These can be overridden by CLI options.
 
-If the token is missing, ask the user to set it (e.g. in `.env` or `export WEBEX_ACCESS_TOKEN=your_token`) and re-run.
+If the token is missing, ask the user to set it (e.g. in `~/.openclaw/workspace/skills/webex-skill/.env`) and re-run.
 
 ## Quick Start
 
 1. Ensure `WEBEX_ACCESS_TOKEN` is set (e.g. in `.env` in the project root).
 2. From the project root:
    ```bash
+   cd ~/.openclaw/workspace/skills/webex-skill
    npm install
    node scripts/fetch-unread.mjs
    ```
@@ -33,6 +35,7 @@ If the token is missing, ask the user to set it (e.g. in `.env` or `export WEBEX
 3. Parse the JSON line from stdout: `{ "outputPath": "<path>", "error": null }`. The message fetch result is saved under the `output/` folder as `message-history-<since>-<to>.json`. **Use the returned `outputPath` and read that file with your tools to extract rooms and messages**; do not expect the full payload on stdout.
 4. To send a message to a room or person:
    ```bash
+   cd ~/.openclaw/workspace/skills/webex-skill
    node scripts/send-message.mjs --to user@example.com --message "**Hello** in markdown"
    node scripts/send-message.mjs -t ROOM_ID -m "Room message"
    ```
@@ -43,8 +46,8 @@ The fetch script writes **unread** direct and group rooms (with message bodies a
 
 ### Step 1: Ensure token and run fetch script
 
-- Check that `WEBEX_ACCESS_TOKEN` is set in `.env` or the environment. If not, tell the user to set it and try again.
-- From the project root, run: `node scripts/fetch-unread.mjs` (optionally with `--hours N` and `--max-rooms N`).
+- Check that `WEBEX_ACCESS_TOKEN` is set in `~/.openclaw/workspace/skills/webex-skill/.env`. If not, tell the user to set it and try again.
+- From the project root (`~/.openclaw/workspace/skills/webex-skill/`), run: `node scripts/fetch-unread.mjs` (optionally with `--hours N` and `--max-rooms N`).
 - Capture stdout: one JSON line `{ "outputPath": "<absolute path>", "error": null }`. On failure: `{ "outputPath": null, "error": "message" }` and exits non-zero.
 - **Read the file at `outputPath`** using your file-read tool to get the full result. Do not parse rooms from stdout.
 
@@ -100,12 +103,12 @@ When presenting results to the user, use this structure:
 
   Examples: `--hours 12 --max-rooms 10`, `-H 48 -n 5`, `--hours=6 --max-rooms=20`.
 - **Input**: Token from `WEBEX_ACCESS_TOKEN`; optional env `WEBEX_MAX_RECENT`, `WEBEX_ACTIVITY_HOURS`.
-- **Output**: Writes the full result to `output/message-history-<since>-<to>.json` (since/to are ISO-like timestamps in the filename). Prints a single JSON line to stdout: `{ "outputPath": "<absolute path to file>", "error": null }`. **Extract rooms and messages by reading the file at `outputPath`** (e.g. with a read-file tool); do not expect the payload on stdout.
+- **Output**: Writes the full result to `output/message-history-<since>-<to>.json` (since/to are ISO-like timestamps in the filename). Prints a single JSON line to stdout: `{ "outputPath": "<absolute path to file>", "error": null }`. **Extract rooms and messages by using `jq` to read from the json file at `outputPath`** (e.g. with a read-file tool); do not expect the payload on stdout.
 - **Errors**: Prints `{ "outputPath": null, "error": "message" }` and exits non-zero. Do not log or echo the token.
 
 #### Response schema (fetch-unread.mjs)
 
-Schema of the **JSON file** written to `outputPath` (not stdout). Use this when parsing the file to extract rooms and messages:
+Schema of the **JSON file** written to `outputPath` (not stdout). Use this to construct `jq` query when parsing the file to extract rooms and messages:
 
 ```yaml
 type: object
